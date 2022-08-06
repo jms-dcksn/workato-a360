@@ -59,8 +59,18 @@
       input_fields: lambda do 
         [
           {
+            name: "folderPath",
+            label: "Folder Path in Public Repository",
+            optional: false,
+            control_type: 'select',
+            pick_list: 'folder_paths'
+          },
+          {
             name: 'fileId',
             label: "Bot File ID",
+            control_type: 'select',
+            pick_list: 'bot_file_id',
+            pick_list_params: { folder_id: 'folderPath' },
             type: :integer,
             convert_input: "integer_conversion",
             optional: false
@@ -74,9 +84,10 @@
           },
           {
             name: "runAsUserIds",
-            label: "Run As User ID",
+            label: "Run As User",
+            control_type: 'select',
+            pick_list: 'run_as_users',
             type: :integer,
-            control_type: "number",
             convert_input: "integer_conversion",
             optional: false
           },
@@ -84,7 +95,8 @@
             name: "poolIds",
             label: "Pool ID",
             type: :integer,
-            control_type: "number",
+            control_type: 'select',
+            pick_list: 'pools',
             convert_input: "integer_conversion",
             optional: false
           },
@@ -102,7 +114,7 @@
         ]
       end,
 
-      execute: lambda do |_connection, _input|
+      execute: lambda do |connection, _input|
         error("Provide all inputs") if _input.blank?
         post("/v3/automations/deploy").
           payload(fileId: _input['fileId'],
@@ -117,7 +129,7 @@
         ]
       end,
 
-      sample_output: lambda do |_connection, _input|
+      sample_output: lambda do |connection, _input|
         {
           "Deployment Id" => "27fddc7d-d931-4960-ac0f-0b9fea5fd6c4"
         }
@@ -135,6 +147,8 @@
           {
             name: 'processId',
             label: "Process ID",
+            control_type: 'select',
+            pick_list: 'aari_processes',
             type: :integer,
             convert_input: "integer_conversion",
             optional: false
@@ -179,6 +193,48 @@
       end
     }
   },
+  
+  pick_lists: {
+    folder_paths: lambda do |_connection|
+      post("/v2/repository/workspaces/public/files/list").
+        payload(filter: {
+          operator: "eq",
+          field: "type",
+          value: "application/vnd.aa.directory"
+        })&.
+        dig('list')&.
+        pluck('path', 'id')
+    end,
+    bot_file_id: lambda do |_connection, folder_id:|
+      #folder_id_param = folder_id
+      post("v2/repository/folders/" + folder_id + "/list").
+        payload(fields: []).
+        after_error_response(400) do |code, body, headers|
+          error("Error loading pick list: #{body} for folder id: " + folder_id)
+        end.
+        dig('list')&.
+        pluck('name', 'id')
+    end,
+    run_as_users: lambda do |_connection|
+      post("/v1/devices/runasusers/list").
+        payload(fields: [])&.
+        dig('list')&.
+        pluck('username', 'id')
+    end,
+    pools: lambda do |_connection|
+      post("/v2/devices/pools/list").
+        payload(fields: []).
+        dig('list').
+        pluck('name', 'id')
+    end,
+    aari_processes: lambda do |_connection|
+      post("aari/v2/processes/list").
+        payload(fields: []).
+        dig('list').
+        pluck('name', 'id')
+    end
+  },
+  
   methods: {
      key_value_conversion: lambda do |val|
        #iterate over the array object from user input, then 
