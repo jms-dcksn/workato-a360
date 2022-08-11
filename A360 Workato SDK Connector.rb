@@ -208,7 +208,11 @@
     bot_file_id: lambda do |_connection, folder_id:|
       #folder_id_param = folder_id
       post("v2/repository/folders/" + folder_id + "/list").
-        payload(fields: []).
+        payload(filter: {
+          operator: "eq",
+          field: "type",
+          value: "application/vnd.aa.taskbot"
+        })&.
         after_error_response(400) do |code, body, headers|
           error("Error loading pick list: #{body} for folder id: " + folder_id)
         end.
@@ -254,5 +258,62 @@
           } 
       }
     end
-     }
+     },
+  
+  webhook_keys: lambda do |params, headers, payload|
+     "#{payload['result']}"#"partFound"  #payload['result']
+  end,
+  
+  triggers: {
+    bot_output: {
+      title: 'Bot Run Complete',
+      
+      subtitle: "Triggers when a bot completes execution.",
+      
+      description: "New bot output received",
+      
+      help: "Triggers on a specific bot that is configured to send a webhook with its output/result. " \
+        "First, enter an expected bot output in the input field. If the payload from the bot includes "\
+        "that output, the trigger will be activated. The appropriate payload should be configured in the A360 Bot sending the webhook.",
+      
+      input_fields: lambda do 
+        [
+         {
+           name: 'bot_result',
+           optional: false
+         } 
+        ]
+      end,
+      
+      webhook_key: lambda do |connection, input|
+        "#{input['bot_result']}"    #input['bot_result']
+      end,
+      
+      webhook_notification: ->(_connection, payload) { payload },
+      
+      dedup: ->(output) { "#{output['id']}@#{output['createdAt']}" },
+      
+#       dedup: lambda do |record|
+#         "#{record['id']}@#{record['createdAt']}" #string here of id and timestamp
+#       end,
+      output_fields: lambda do |connection|
+        [
+          {
+            name: 'orderId'
+          },
+          {
+            name: 'productId'
+          },
+          {
+            name: 'orderItem'
+          }
+        ]
+      end,
+      sample_output: lambda do |connection, input|
+        {
+          data: "id: orderId: etc."
+        }
+      end
+    }
+  }
 }
