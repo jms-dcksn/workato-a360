@@ -236,6 +236,14 @@
         payload(fields: []).
         dig('list').
         pluck('name', 'id')
+    end,
+    status: lambda do |_connection|
+      [
+        ["In Progress", "UPDATE"],
+        ["Complete", "COMPLETED"],
+        ["Run Failed", "RUN_FAILED"],
+        ["Deploy Failed", "DEPLOY_FAILED"]
+      ]
     end
   },
   
@@ -265,6 +273,7 @@
   end,
   
   triggers: {
+    #This trigger was created specific to a demo, where the bot was configured to send a webhook that matches the below output.
     bot_output: {
       title: 'Bot Run Complete',
       
@@ -313,6 +322,150 @@
         {
           data: "id: orderId: etc."
         }
+      end
+    },
+    
+    automation_status: {
+      title: 'Automation Status',
+      
+      subtitle: "Triggers on a user-defined status of an automation in A360",
+      
+      description: "Select bot to monitor and status to define trigger activation.",
+      
+      help: "Trigger will be activated when the selected automation is deployed and matches the defined status.",
+      
+      input_fields: lambda do 
+        [
+          {
+            name: "folderPath",
+            label: "Folder Path in Public Repository",
+            optional: false,
+            control_type: 'select',
+            pick_list: 'folder_paths'
+          },
+          {
+            name: 'fileId',
+            label: "Bot File ID",
+            control_type: 'select',
+            pick_list: 'bot_file_id',
+            pick_list_params: { folder_id: 'folderPath' },
+            type: :integer,
+            optional: false
+          },
+          {
+            name: 'status',
+            control_type: 'select',
+            pick_list: 'status',
+            optional: false
+          },
+          {
+            name: 'since',
+            label: 'When first started, this recipe should pick up events from',
+            type: 'timestamp',
+            optional: true,
+            sticky: true,
+            hint: 'When you start recipe for the first time, it picks up ' \
+            'trigger events from this specified date and time. Defaults to ' \
+            'the current time.'
+          }
+        ]
+      end,
+      
+      poll: lambda do |connection, input, closure|
+        
+        closure = {} unless closure.present?
+        
+        page_size = 200 #need to add pagination
+        offset = 0 unless offset.present?
+        
+        updated_since = (closure['cursor'] || input['since'] || Time.now ).to_time.utc.iso8601 #need to valide time format
+        
+        statuses = post('/v2/activity/list').
+          payload(sort: [{
+                      field: 'startDateTime',
+                      direction: 'asc'
+                  }],
+                  filter: {
+                    operator: 'and',
+                    operands: [
+                      {
+                        operator: 'eq',
+                        field: 'fileId',
+                        value: input['fileId']
+                      },
+                      {
+                        operator: 'gt',
+                        field: 'startDateTime',
+                        value: updated_since
+                      },
+                      {
+                        operator: 'eq',
+                        field: 'status',
+                        value: input['status']
+                      }
+                    ]
+                  },
+            page: {
+              length: page_size,
+              offset: offset
+            }
+                )
+        
+       
+        trigger_list = statuses.dig('list')
+        page_info = statuses.dig('page')
+        
+        if page_info['totalFilter'] > (page_info['offset'] + page_size)
+          offset = offset + page_size
+          poll_more = true
+        else
+          offset = 0
+          poll_more = false
+        end
+        
+        #Can poll more could be set by checking if offset greater then sum of total and page
+        #Need to include page size in API filter, and conditionally set offset to implement pagination
+        
+        closure['cursor'] = trigger_list.last['startDateTime'] unless trigger_list.blank?
+        {
+          events: trigger_list,
+          next_poll: closure,
+          can_poll_more: poll_more 
+        }
+      end,
+      
+      dedup: ->(record) { "#{record['id']}@#{record['startDateTime']}" },
+      
+      output_fields: lambda do 
+        [
+          {
+            name: 'status'
+          },
+          {
+            name: 'automationName'  
+          },
+          {
+            name: 'fileName'
+          },
+          {
+            name: 'message'
+          },
+          {
+            name: 'deploymentId'
+          },
+          {
+            name: 'deviceName'
+          },
+          {
+            name: 'userName'
+          },
+          {
+            name: 'currentLine'
+          },
+          {
+            name: 'command'
+          }
+        ]
       end
     }
   }
